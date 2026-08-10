@@ -11,6 +11,10 @@ import (
 	"github.com/platform-engineering-labs/oidcx"
 )
 
+const (
+	Audience = "sts.amazonaws.com"
+)
+
 type Config struct {
 	RoleARN     string
 	Region      string
@@ -23,7 +27,7 @@ type TokenRetriever struct {
 }
 
 func (t TokenRetriever) GetIdentityToken() ([]byte, error) {
-	tok, err := t.client.Token(t.ctx)
+	tok, err := t.client.Token(t.ctx, Audience)
 	if err != nil {
 		return nil, err
 	}
