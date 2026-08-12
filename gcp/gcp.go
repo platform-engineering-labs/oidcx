@@ -25,14 +25,19 @@ type Config struct {
 	PoolID        string
 	ProviderID    string
 
-	Scopes []string
+	scopes []string
 }
 
-func (c Config) scopes() []string {
-	if len(c.Scopes) > 0 {
-		return c.Scopes
+func NewConfig(scopes []string) Config {
+	if len(scopes) == 0 {
+		scopes = []string{"https://www.googleapis.com/auth/cloud-platform"}
 	}
-	return []string{"https://www.googleapis.com/auth/cloud-platform"}
+
+	return Config{}
+}
+
+func (c Config) Scopes() []string {
+	return c.scopes
 }
 
 // Audience is the full provider resource name. GCP expects this as the audience
@@ -83,7 +88,7 @@ func TokenSource(ctx context.Context, client oidcx.Client, cfg Config) (oauth2.T
 		SubjectTokenType:     "urn:ietf:params:oauth:token-type:jwt",
 		TokenURL:             "https://sts.googleapis.com/v1/token",
 		SubjectTokenSupplier: SubjectTokenSupplier{client: client},
-		Scopes:               cfg.scopes(),
+		Scopes:               cfg.Scopes(),
 	}
 
 	return externalaccount.NewTokenSource(ctx, conf)

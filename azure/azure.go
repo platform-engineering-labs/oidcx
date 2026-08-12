@@ -17,14 +17,19 @@ type Config struct {
 	// carries the federated identity credential.
 	ClientID string
 
-	Scopes []string
+	scopes []string
 }
 
-func (c Config) scopes() []string {
-	if len(c.Scopes) > 0 {
-		return c.Scopes
+func NewConfig(scopes []string) Config {
+	if len(scopes) == 0 {
+		scopes = []string{"https://management.azure.com/.default"}
 	}
-	return []string{"https://management.azure.com/.default"}
+
+	return Config{}
+}
+
+func (c Config) Scopes() []string {
+	return c.scopes
 }
 
 // Credential returns an azidentity credential.
