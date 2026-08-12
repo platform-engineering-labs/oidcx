@@ -25,7 +25,7 @@ func NewConfig(scopes []string) Config {
 		scopes = []string{"https://management.azure.com/.default"}
 	}
 
-	return Config{}
+	return Config{scopes: scopes}
 }
 
 func (c Config) Scopes() []string {

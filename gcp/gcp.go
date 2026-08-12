@@ -33,7 +33,7 @@ func NewConfig(scopes []string) Config {
 		scopes = []string{"https://www.googleapis.com/auth/cloud-platform"}
 	}
 
-	return Config{}
+	return Config{scopes: scopes}
 }
 
 func (c Config) Scopes() []string {
