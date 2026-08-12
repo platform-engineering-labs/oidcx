@@ -72,10 +72,10 @@ func (s SubjectTokenSupplier) SubjectToken(ctx context.Context, opts externalacc
 	return s.client.Token(ctx, opts.Audience)
 }
 
-// GCPTokenSource returns an oauth2.TokenSource that trades tokens for
+// TokenSource returns an oauth2.TokenSource that trades tokens for
 // Google credentials and refreshes them automatically. Pass it to any Google
 // client library with option.WithTokenSource.
-func GCPTokenSource(ctx context.Context, client oidcx.Client, cfg Config) (oauth2.TokenSource, error) {
+func TokenSource(ctx context.Context, client oidcx.Client, cfg Config) (oauth2.TokenSource, error) {
 	conf := externalaccount.Config{
 		Audience:             cfg.Audience(),
 		SubjectTokenType:     "urn:ietf:params:oauth:token-type:jwt",
