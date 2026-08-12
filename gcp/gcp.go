@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	AudienceTpl     = "https://iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s"
+	AudienceTpl     = "//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s"
 	PrincipalTpl    = "principal://iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/subject/%s"
 	PrincipalSetTpl = "principalSet://iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/attribute.%s/%s"
 )
@@ -76,6 +76,8 @@ func (s SubjectTokenSupplier) SubjectToken(ctx context.Context, opts externalacc
 // Google credentials and refreshes them automatically. Pass it to any Google
 // client library with option.WithTokenSource.
 func TokenSource(ctx context.Context, client oidcx.Client, cfg Config) (oauth2.TokenSource, error) {
+	fmt.Println(cfg.Audience())
+
 	conf := externalaccount.Config{
 		Audience:             cfg.Audience(),
 		SubjectTokenType:     "urn:ietf:params:oauth:token-type:jwt",
