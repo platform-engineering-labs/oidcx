@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/platform-engineering-labs/oidcx"
+	"github.com/platform-engineering-labs/oox/oidcx"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
 )

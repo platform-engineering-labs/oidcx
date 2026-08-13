@@ -1,4 +1,4 @@
-module github.com/platform-engineering-labs/oidcx
+module github.com/platform-engineering-labs/oox
 
 go 1.26.4
 

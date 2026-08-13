@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/platform-engineering-labs/oidcx"
+	"github.com/platform-engineering-labs/oox/oidcx"
 )
 
 const (

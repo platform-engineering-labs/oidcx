@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/platform-engineering-labs/oidcx"
+	"github.com/platform-engineering-labs/oox/oidcx"
 )
 
 const Audience = "api://AzureADTokenExchange"
