@@ -1,0 +1,111 @@
+package aws
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/platform-engineering-labs/oox/provx"
+)
+
+type AWS struct {
+	*slog.Logger
+
+	client         *iam.Client
+	accountId      string
+	tenantId       string
+	installationId string
+}
+
+func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, tenantId, installationId string) (*AWS, error) {
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credProvider),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch authenticated account id
+	stsClient := sts.NewFromConfig(cfg)
+
+	result, err := stsClient.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account id: %v", err)
+	}
+
+	return &AWS{logger, iam.NewFromConfig(cfg), *result.Account, tenantId, installationId}, nil
+}
+
+func (a *AWS) Create(ctx context.Context) error {
+	// Check if OIDC connect provider exists
+	connectorExists, err := ConnectProvider.Exists(ctx, a)
+	if err != nil {
+		return err
+	}
+
+	if !connectorExists {
+		// Create connect provider
+		err := ConnectProvider.Create(ctx, a)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Check trust role is exists
+	roleExists, err := Role.Exists(ctx, a)
+	if err != nil {
+		return err
+	}
+
+	if !roleExists {
+		// Create the trust role
+		err := Role.Create(ctx, a)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Idempotently attach the administrator policy to the role
+	_, err = a.client.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
+		RoleName:  aws.String(provx.SubjectIdentifier(a.tenantId, a.installationId)),
+		PolicyArn: aws.String("arn:aws:iam::aws:policy/AdministratorAccess"),
+	})
+	if err != nil {
+		var alreadyAttachedErr *types.EntityAlreadyExistsException
+		if !errors.As(err, &alreadyAttachedErr) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Delete idempotent, resources have known names delete and log, but not return errors
+func (a *AWS) Delete(ctx context.Context) error {
+	_, err := a.client.DeleteRole(ctx, &iam.DeleteRoleInput{
+		RoleName: aws.String(provx.SubjectIdentifier(a.tenantId, a.installationId)),
+	})
+	if err != nil {
+		a.Error("failed to delete role: %v", err)
+	} else {
+		a.Info("deleted role")
+	}
+
+	_, err = a.client.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(ConnectProvider.Arn(a.accountId)),
+	})
+	if err != nil {
+		a.Error("failed to delete role: %v", err)
+	} else {
+		a.Info("deleted openid connect provider")
+	}
+
+	return nil
+}
