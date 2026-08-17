@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -23,6 +24,10 @@ type AWS struct {
 	installationId string
 }
 
+// New create a new AWS provisioner
+//
+// create a credential provider like:
+// static: provider := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
 func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, tenantId, installationId string) (*AWS, error) {
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(region),
@@ -56,6 +61,8 @@ func (a *AWS) Create(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
+		log.Println("created connector")
 	}
 
 	// Check trust role is exists
@@ -70,6 +77,8 @@ func (a *AWS) Create(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
+		log.Println("created connector role")
 	}
 
 	// Idempotently attach the administrator policy to the role
@@ -84,28 +93,16 @@ func (a *AWS) Create(ctx context.Context) error {
 		}
 	}
 
+	log.Println("attached connector policy")
+
 	return nil
 }
 
 // Delete idempotent, resources have known names delete and log, but not return errors
 func (a *AWS) Delete(ctx context.Context) error {
-	_, err := a.client.DeleteRole(ctx, &iam.DeleteRoleInput{
-		RoleName: aws.String(provx.SubjectIdentifier(a.tenantId, a.installationId)),
-	})
-	if err != nil {
-		a.Error("failed to delete role: %v", err)
-	} else {
-		a.Info("deleted role")
-	}
+	Role.Delete(ctx, a)
 
-	_, err = a.client.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
-		OpenIDConnectProviderArn: aws.String(ConnectProvider.Arn(a.accountId)),
-	})
-	if err != nil {
-		a.Error("failed to delete role: %v", err)
-	} else {
-		a.Info("deleted openid connect provider")
-	}
+	ConnectProvider.Delete(ctx, a)
 
 	return nil
 }

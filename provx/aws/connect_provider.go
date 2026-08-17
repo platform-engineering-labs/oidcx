@@ -52,3 +52,14 @@ func (connectProvider) Create(ctx context.Context, awsProv *AWS) error {
 
 	return nil
 }
+
+func (connectProvider) Delete(ctx context.Context, awsProv *AWS) {
+	_, err := awsProv.client.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(ConnectProvider.Arn(awsProv.accountId)),
+	})
+	if err != nil {
+		awsProv.Error("failed to delete role: %v", err)
+	} else {
+		awsProv.Info("deleted openid connect provider")
+	}
+}
