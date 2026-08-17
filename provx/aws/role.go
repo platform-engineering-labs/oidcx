@@ -33,22 +33,6 @@ var Role = role{}
 
 type role struct{}
 
-func (role) Exists(ctx context.Context, awsProv *AWS) (bool, error) {
-	_, err := awsProv.client.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(provx.SubjectIdentifier(awsProv.tenantId, awsProv.installationId)),
-	})
-	if err != nil {
-		var noSuchEntityErr *types.NoSuchEntityException
-		if errors.As(err, &noSuchEntityErr) {
-			return false, nil
-		}
-
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (role) Create(ctx context.Context, awsProv *AWS) error {
 	trustPolicy := TrustPolicy{
 		Version: "2012-10-17",
@@ -80,29 +64,35 @@ func (role) Create(ctx context.Context, awsProv *AWS) error {
 		Description:              aws.String("formae.ai oidc connection"),
 	})
 	if err != nil {
+		var alreadyExistsErr *types.EntityAlreadyExistsException
+		if errors.As(err, &alreadyExistsErr) {
+			awsProv.Info("exists: connector role")
+			return nil
+		}
+
 		return fmt.Errorf("failed to create IAM role: %v", err)
 	}
+
+	awsProv.Info("created: connector role")
 
 	return nil
 }
 
-func (role) Delete(ctx context.Context, awsProv *AWS) {
-	_, err := awsProv.client.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
-		RoleName:  aws.String(provx.SubjectIdentifier(awsProv.tenantId, awsProv.installationId)),
-		PolicyArn: aws.String("arn:aws:iam::aws:policy/AdministratorAccess"),
-	})
-	if err != nil {
-		awsProv.Error("failed to delete role policy: %v", err)
-	} else {
-		awsProv.Info("deleted role policy")
-	}
-
-	_, err = awsProv.client.DeleteRole(ctx, &iam.DeleteRoleInput{
+func (role) Delete(ctx context.Context, awsProv *AWS) error {
+	_, err := awsProv.client.DeleteRole(ctx, &iam.DeleteRoleInput{
 		RoleName: aws.String(provx.SubjectIdentifier(awsProv.tenantId, awsProv.installationId)),
 	})
 	if err != nil {
-		awsProv.Error("failed to delete role: %v", err)
-	} else {
-		awsProv.Info("deleted role")
+		var noSuchEntityErr *types.NoSuchEntityException
+		if errors.As(err, &noSuchEntityErr) {
+			awsProv.Info("already deleted: connector role")
+			return nil
+		} else {
+			return err
+		}
 	}
+
+	awsProv.Info("deleted: connector role")
+
+	return nil
 }
