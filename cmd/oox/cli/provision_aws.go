@@ -15,9 +15,11 @@ func init() {
 	ProvisionAWS.AddCommand(ProvisionAWSCreate)
 	ProvisionAWS.AddCommand(ProvisionAWSDelete)
 
+	ProvisionAWSCreate.Flags().String("account", "", "AWS account id")
 	ProvisionAWSCreate.Flags().String("access-key", "", "AWS access key id")
 	ProvisionAWSCreate.Flags().String("secret-key", "", "AWS access key secret")
 
+	ProvisionAWSDelete.Flags().String("account", "", "AWS account id")
 	ProvisionAWSDelete.Flags().String("access-key", "", "AWS access key id")
 	ProvisionAWSDelete.Flags().String("secret-key", "", "AWS access key secret")
 }
@@ -32,6 +34,7 @@ var ProvisionAWSCreate = &cobra.Command{
 	Short: "provision oidc connector to AWS",
 
 	RunE: func(cmd *cobra.Command, args []string) error {
+		account, _ := cmd.Flags().GetString("account")
 		accessKey, _ := cmd.Flags().GetString("access-key")
 		secretKey, _ := cmd.Flags().GetString("secret-key")
 
@@ -49,7 +52,7 @@ var ProvisionAWSCreate = &cobra.Command{
 			return fmt.Errorf("must provide installation id")
 		}
 
-		prov, err := aws.New(slog.New(Logger), credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", tenantId, installationId)
+		prov, err := aws.New(slog.New(Logger), credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", account, tenantId, installationId)
 		if err != nil {
 			return err
 		}
@@ -71,6 +74,7 @@ var ProvisionAWSDelete = &cobra.Command{
 	Short: "de-provision oidc connector to AWS",
 
 	RunE: func(cmd *cobra.Command, args []string) error {
+		account, _ := cmd.Flags().GetString("account")
 		accessKey, _ := cmd.Flags().GetString("access-key")
 		secretKey, _ := cmd.Flags().GetString("secret-key")
 
@@ -88,7 +92,7 @@ var ProvisionAWSDelete = &cobra.Command{
 			return fmt.Errorf("must provide installation id")
 		}
 
-		prov, err := aws.New(slog.New(Logger), credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", tenantId, installationId)
+		prov, err := aws.New(slog.New(Logger), credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", account, tenantId, installationId)
 		if err != nil {
 			return err
 		}

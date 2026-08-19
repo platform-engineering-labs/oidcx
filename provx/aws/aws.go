@@ -24,7 +24,7 @@ type AWS struct {
 //
 // create a credential provider like:
 // static: provider := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
-func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, tenantId, installationId string) (*AWS, error) {
+func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, accountId, tenantId, installationId string) (*AWS, error) {
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(region),
 		config.WithCredentialsProvider(credProvider),
@@ -39,6 +39,10 @@ func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, tena
 	result, err := stsClient.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get account id: %v", err)
+	}
+
+	if *result.Account != accountId {
+		return nil, fmt.Errorf("account id does not match the account authenticated to with the provided credentials, expected %s, got %s", accountId, result.Account)
 	}
 
 	return &AWS{logger, iam.NewFromConfig(cfg), *result.Account, tenantId, installationId}, nil
