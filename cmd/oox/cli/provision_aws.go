@@ -71,7 +71,7 @@ var ProvisionAWSCreate = &cobra.Command{
 
 var ProvisionAWSDelete = &cobra.Command{
 	Use:   "delete [tenantId] [installationId]",
-	Short: "de-provision oidc connector to AWS",
+	Short: "de-provision oidc connector from AWS",
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, _ := cmd.Flags().GetString("account")
