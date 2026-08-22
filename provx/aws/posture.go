@@ -2,12 +2,10 @@ package aws
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 )
 
 // The connector role's fixed permission posture: the PowerUserAccess
@@ -36,23 +34,9 @@ func InlinePolicyJSON() string { return inlinePolicyJSON }
 // idempotent), then detach foreign managed and delete foreign inline
 // policies. Permissions boundaries are the customer's and untouched.
 func (a *AWS) ensurePosture(ctx context.Context) (detached, deletedInline []string, err error) {
-	var attachedArns []string
-	var marker *string
-	for {
-		page, err := a.iam.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
-			RoleName: aws.String(a.roleName),
-			Marker:   marker,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list attached role policies: %w", err)
-		}
-		for _, p := range page.AttachedPolicies {
-			attachedArns = append(attachedArns, aws.ToString(p.PolicyArn))
-		}
-		if !page.IsTruncated {
-			break
-		}
-		marker = page.Marker
+	attachedArns, err := a.listAttachedPolicyArns(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	hasManaged := false
@@ -96,21 +80,9 @@ func (a *AWS) ensurePosture(ctx context.Context) (detached, deletedInline []stri
 		a.logger.Info("detached: foreign managed policy")
 	}
 
-	var inlineNames []string
-	marker = nil
-	for {
-		page, err := a.iam.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
-			RoleName: aws.String(a.roleName),
-			Marker:   marker,
-		})
-		if err != nil {
-			return detached, deletedInline, fmt.Errorf("failed to list inline role policies: %w", err)
-		}
-		inlineNames = append(inlineNames, page.PolicyNames...)
-		if !page.IsTruncated {
-			break
-		}
-		marker = page.Marker
+	inlineNames, err := a.listInlinePolicyNames(ctx)
+	if err != nil {
+		return detached, deletedInline, err
 	}
 
 	for _, name := range inlineNames {
@@ -131,29 +103,46 @@ func (a *AWS) ensurePosture(ctx context.Context) (detached, deletedInline []stri
 	return detached, deletedInline, nil
 }
 
-// deletePosture removes the posture's attachments so DeleteRole can
-// succeed: IAM refuses to delete a role that still has attached or
-// inline policies. Both removals tolerate not-found.
-func (a *AWS) deletePosture(ctx context.Context) error {
-	var noSuchEntityErr *types.NoSuchEntityException
-
-	_, err := a.iam.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
-		RoleName:  aws.String(a.roleName),
-		PolicyArn: aws.String(ManagedPolicyArn),
-	})
-	if err != nil && !errors.As(err, &noSuchEntityErr) {
-		return err
+// listAttachedPolicyArns enumerates every managed policy attached to
+// the role, across pagination.
+func (a *AWS) listAttachedPolicyArns(ctx context.Context) ([]string, error) {
+	var arns []string
+	var marker *string
+	for {
+		page, err := a.iam.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
+			RoleName: aws.String(a.roleName),
+			Marker:   marker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list attached role policies: %w", err)
+		}
+		for _, p := range page.AttachedPolicies {
+			arns = append(arns, aws.ToString(p.PolicyArn))
+		}
+		if !page.IsTruncated {
+			return arns, nil
+		}
+		marker = page.Marker
 	}
+}
 
-	_, err = a.iam.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
-		RoleName:   aws.String(a.roleName),
-		PolicyName: aws.String(InlinePolicyName),
-	})
-	if err != nil && !errors.As(err, &noSuchEntityErr) {
-		return err
+// listInlinePolicyNames enumerates every inline policy on the role,
+// across pagination.
+func (a *AWS) listInlinePolicyNames(ctx context.Context) ([]string, error) {
+	var names []string
+	var marker *string
+	for {
+		page, err := a.iam.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+			RoleName: aws.String(a.roleName),
+			Marker:   marker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list inline role policies: %w", err)
+		}
+		names = append(names, page.PolicyNames...)
+		if !page.IsTruncated {
+			return names, nil
+		}
+		marker = page.Marker
 	}
-
-	a.logger.Info("deleted: connector role posture")
-
-	return nil
 }

@@ -103,34 +103,8 @@ func (a *AWS) ensureRole(ctx context.Context) (string, RoleOutcome, error) {
 		return "", "", fmt.Errorf("failed to create IAM role: %w", err)
 	}
 
-	tags := map[string]string{}
-	var marker *string
-	for {
-		page, err := a.iam.ListRoleTags(ctx, &iam.ListRoleTagsInput{
-			RoleName: aws.String(a.roleName),
-			Marker:   marker,
-		})
-		if err != nil {
-			return "", "", fmt.Errorf("failed to read role tags: %w", err)
-		}
-		for _, tg := range page.Tags {
-			tags[aws.ToString(tg.Key)] = aws.ToString(tg.Value)
-		}
-		if !page.IsTruncated {
-			break
-		}
-		marker = page.Marker
-	}
-
-	owner := tags[tagOwner]
-	subject := tags[tagSubject]
-	switch {
-	case owner == "":
-		return "", "", &RoleCollisionError{RoleName: a.roleName}
-	case owner != tagOwnerValue:
-		return "", "", &RoleCollisionError{RoleName: a.roleName, Owner: owner}
-	case subject != a.subject:
-		return "", "", &RoleCollisionError{RoleName: a.roleName, Owner: owner, SubjectWanted: a.subject, SubjectFound: subject}
+	if err := a.assertRoleOwnership(ctx); err != nil {
+		return "", "", err
 	}
 
 	_, err = a.iam.UpdateAssumeRolePolicy(ctx, &iam.UpdateAssumeRolePolicyInput{
@@ -150,12 +124,94 @@ func (a *AWS) ensureRole(ctx context.Context) (string, RoleOutcome, error) {
 	return aws.ToString(got.Role.Arn), RoleConverged, nil
 }
 
+// assertRoleOwnership reads the role's tags (paginated) and returns nil
+// only when they prove the role is ours for this exact subject; any
+// other tag state is a *RoleCollisionError. A failed read, including
+// NoSuchEntity when the role does not exist, comes back wrapped for the
+// caller to interpret.
+func (a *AWS) assertRoleOwnership(ctx context.Context) error {
+	tags := map[string]string{}
+	var marker *string
+	for {
+		page, err := a.iam.ListRoleTags(ctx, &iam.ListRoleTagsInput{
+			RoleName: aws.String(a.roleName),
+			Marker:   marker,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to read role tags: %w", err)
+		}
+		for _, tg := range page.Tags {
+			tags[aws.ToString(tg.Key)] = aws.ToString(tg.Value)
+		}
+		if !page.IsTruncated {
+			break
+		}
+		marker = page.Marker
+	}
+
+	owner := tags[tagOwner]
+	subject := tags[tagSubject]
+	switch {
+	case owner == "":
+		return &RoleCollisionError{RoleName: a.roleName}
+	case owner != tagOwnerValue:
+		return &RoleCollisionError{RoleName: a.roleName, Owner: owner}
+	case subject != a.subject:
+		return &RoleCollisionError{RoleName: a.roleName, Owner: owner, SubjectWanted: a.subject, SubjectFound: subject}
+	}
+	return nil
+}
+
+// deleteRole removes the connector role behind the same ownership gate
+// ensureRole enforces: nothing is touched unless the tags prove the
+// role is ours for this exact subject, and a role that is already gone
+// is success. Before DeleteRole every attached managed policy is
+// detached and every inline policy deleted, whatever their names: IAM
+// refuses to delete a role with attachments, and roles provisioned by
+// earlier posture versions carry policies the current posture does not.
 func (a *AWS) deleteRole(ctx context.Context) error {
-	_, err := a.iam.DeleteRole(ctx, &iam.DeleteRoleInput{
+	var noSuchEntityErr *types.NoSuchEntityException
+
+	if err := a.assertRoleOwnership(ctx); err != nil {
+		if errors.As(err, &noSuchEntityErr) {
+			a.logger.Info("already deleted: connector role")
+			return nil
+		}
+		return err
+	}
+
+	attachedArns, err := a.listAttachedPolicyArns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, arn := range attachedArns {
+		_, err := a.iam.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(a.roleName),
+			PolicyArn: aws.String(arn),
+		})
+		if err != nil && !errors.As(err, &noSuchEntityErr) {
+			return fmt.Errorf("failed to detach an attached policy: %w", err)
+		}
+	}
+
+	inlineNames, err := a.listInlinePolicyNames(ctx)
+	if err != nil {
+		return err
+	}
+	for _, name := range inlineNames {
+		_, err := a.iam.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+			RoleName:   aws.String(a.roleName),
+			PolicyName: aws.String(name),
+		})
+		if err != nil && !errors.As(err, &noSuchEntityErr) {
+			return fmt.Errorf("failed to delete an inline policy: %w", err)
+		}
+	}
+
+	_, err = a.iam.DeleteRole(ctx, &iam.DeleteRoleInput{
 		RoleName: aws.String(a.roleName),
 	})
 	if err != nil {
-		var noSuchEntityErr *types.NoSuchEntityException
 		if errors.As(err, &noSuchEntityErr) {
 			a.logger.Info("already deleted: connector role")
 			return nil

@@ -113,22 +113,15 @@ func (a *AWS) Create(ctx context.Context) (*Result, error) {
 	}, nil
 }
 
-// Delete idempotent, resources have known names delete and log, but not return errors
+// Delete tears the connection down: the connector role, behind the
+// same ownership gate Create enforces (a foreign, untagged, or
+// other-subject role of the requested name is a *RoleCollisionError
+// with nothing mutated), then the OIDC provider. Already-deleted
+// resources count as success, so Delete is idempotent.
 func (a *AWS) Delete(ctx context.Context) error {
-	err := a.deletePosture(ctx)
-	if err != nil {
+	if err := a.deleteRole(ctx); err != nil {
 		return err
 	}
 
-	err = a.deleteRole(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = a.deleteProvider(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return a.deleteProvider(ctx)
 }
