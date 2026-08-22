@@ -87,7 +87,7 @@ func (a *AWS) Create(ctx context.Context) error {
 		return err
 	}
 
-	err = Policy.Create(ctx, a)
+	_, _, err = a.ensurePosture(ctx)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (a *AWS) Create(ctx context.Context) error {
 
 // Delete idempotent, resources have known names delete and log, but not return errors
 func (a *AWS) Delete(ctx context.Context) error {
-	err := Policy.Delete(ctx, a)
+	err := a.deletePosture(ctx)
 	if err != nil {
 		return err
 	}
