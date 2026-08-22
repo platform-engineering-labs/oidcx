@@ -5,47 +5,73 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/platform-engineering-labs/oox/provx"
 )
 
 type AWS struct {
-	*slog.Logger
+	logger *slog.Logger
 
-	client         *iam.Client
-	accountId      string
-	tenantId       string
-	installationId string
+	iam       iamAPI
+	accountID string
+	subject   string
+	roleName  string
+	issuer    provx.Issuer
 }
 
-// New create a new AWS provisioner
+// New creates a new AWS provisioner from server-produced identity
+// inputs: the exact subject and role name plus the raw issuer string,
+// which is parsed and validated internally.
 //
-// create a credential provider like:
+// Create a credential provider like:
 // static: provider := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
-func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, accountId, tenantId, installationId string) (*AWS, error) {
-	cfg, err := config.LoadDefaultConfig(context.Background(),
+func New(ctx context.Context, creds awssdk.CredentialsProvider, region, accountID, subject, roleName, issuer string) (*AWS, error) {
+	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(region),
-		config.WithCredentialsProvider(credProvider),
+		config.WithCredentialsProvider(creds),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Fetch authenticated account id
-	stsClient := sts.NewFromConfig(cfg)
+	return newWithClients(ctx, sts.NewFromConfig(cfg), iam.NewFromConfig(cfg), accountID, subject, roleName, issuer)
+}
 
-	result, err := stsClient.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
+func newWithClients(ctx context.Context, stsc stsAPI, iamc iamAPI, accountID, subject, roleName, issuer string) (*AWS, error) {
+	iss, err := provx.ParseIssuer(issuer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account id: %v", err)
+		return nil, err
 	}
 
-	if *result.Account != accountId {
-		return nil, fmt.Errorf("account id does not match the account authenticated to with the provided credentials, expected %s, got %s", accountId, *result.Account)
+	out, err := stsc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify caller identity: %w", err)
 	}
 
-	return &AWS{logger, iam.NewFromConfig(cfg), *result.Account, tenantId, installationId}, nil
+	if actual := awssdk.ToString(out.Account); actual != accountID {
+		return nil, &AccountMismatchError{Expected: accountID, Actual: actual}
+	}
+
+	callerArn, err := arn.Parse(awssdk.ToString(out.Arn))
+	if err != nil {
+		return nil, fmt.Errorf("refusing to proceed: caller ARN is malformed: %w", err)
+	}
+	if callerArn.Partition != "aws" {
+		return nil, fmt.Errorf("refusing to proceed: caller is in partition %q, only the commercial aws partition is supported", callerArn.Partition)
+	}
+
+	return &AWS{
+		logger:    slog.Default(),
+		iam:       iamc,
+		accountID: accountID,
+		subject:   subject,
+		roleName:  roleName,
+		issuer:    iss,
+	}, nil
 }
 
 func (a *AWS) Create(ctx context.Context) error {

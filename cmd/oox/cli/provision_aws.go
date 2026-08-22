@@ -3,10 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/platform-engineering-labs/oox/provx"
 	"github.com/platform-engineering-labs/oox/provx/aws"
 	"github.com/spf13/cobra"
 )
@@ -52,13 +52,14 @@ var ProvisionAWSCreate = &cobra.Command{
 			return fmt.Errorf("must provide installation id")
 		}
 
-		prov, err := aws.New(slog.New(Logger), credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", account, tenantId, installationId)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		prov, err := aws.New(ctx, credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", account,
+			provx.Subject(tenantId, installationId), provx.SubjectIdentifier(tenantId, installationId), "https://"+provx.Endpoint)
 		if err != nil {
 			return err
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
 
 		err = prov.Create(ctx)
 		if err != nil {
@@ -92,13 +93,14 @@ var ProvisionAWSDelete = &cobra.Command{
 			return fmt.Errorf("must provide installation id")
 		}
 
-		prov, err := aws.New(slog.New(Logger), credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", account, tenantId, installationId)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		prov, err := aws.New(ctx, credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""), "", account,
+			provx.Subject(tenantId, installationId), provx.SubjectIdentifier(tenantId, installationId), "https://"+provx.Endpoint)
 		if err != nil {
 			return err
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
 
 		err = prov.Delete(ctx)
 		if err != nil {
