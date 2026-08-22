@@ -74,25 +74,43 @@ func newWithClients(ctx context.Context, stsc stsAPI, iamc iamAPI, accountID, su
 	}, nil
 }
 
-func (a *AWS) Create(ctx context.Context) error {
-	// Create or validate the connect provider
-	_, err := a.ensureProvider(ctx)
+// Result reports what Create did.
+type Result struct {
+	Provider         ProviderOutcome
+	Role             RoleOutcome
+	RoleArn          string   // from CreateRole/GetRole output, never assembled
+	DetachedPolicies []string // foreign managed policies removed
+	DeletedInline    []string // foreign inline policies removed
+}
+
+// Create converges the connection to its target state: the OIDC
+// provider (create-or-validate), the connector role (create, or
+// converge under the ownership rule; the role's Description and
+// MaxSessionDuration are set at create only and deliberately not
+// converged), and the fixed permission posture.
+func (a *AWS) Create(ctx context.Context) (*Result, error) {
+	provider, err := a.ensureProvider(ctx)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("oidc provider: %w", err)
 	}
 
-	// Create or converge the trust role
-	_, _, err = a.ensureRole(ctx)
+	roleArn, role, err := a.ensureRole(ctx)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("connector role: %w", err)
 	}
 
-	_, _, err = a.ensurePosture(ctx)
+	detached, deletedInline, err := a.ensurePosture(ctx)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("permission posture: %w", err)
 	}
 
-	return nil
+	return &Result{
+		Provider:         provider,
+		Role:             role,
+		RoleArn:          roleArn,
+		DetachedPolicies: detached,
+		DeletedInline:    deletedInline,
+	}, nil
 }
 
 // Delete idempotent, resources have known names delete and log, but not return errors

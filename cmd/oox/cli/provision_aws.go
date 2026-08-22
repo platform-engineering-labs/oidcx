@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -22,6 +23,13 @@ func init() {
 	ProvisionAWSDelete.Flags().String("account", "", "AWS account id")
 	ProvisionAWSDelete.Flags().String("access-key", "", "AWS access key id")
 	ProvisionAWSDelete.Flags().String("secret-key", "", "AWS access key secret")
+}
+
+func listOrNone(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	return strings.Join(items, ", ")
 }
 
 var ProvisionAWS = &cobra.Command{
@@ -61,10 +69,16 @@ var ProvisionAWSCreate = &cobra.Command{
 			return err
 		}
 
-		err = prov.Create(ctx)
+		result, err := prov.Create(ctx)
 		if err != nil {
 			return err
 		}
+
+		fmt.Printf("provider: %s\n", result.Provider)
+		fmt.Printf("role:     %s\n", result.Role)
+		fmt.Printf("role-arn: %s\n", result.RoleArn)
+		fmt.Printf("detached: %s\n", listOrNone(result.DetachedPolicies))
+		fmt.Printf("inline-removed: %s\n", listOrNone(result.DeletedInline))
 
 		return nil
 	},
