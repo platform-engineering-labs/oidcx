@@ -81,8 +81,8 @@ func (a *AWS) Create(ctx context.Context) error {
 		return err
 	}
 
-	// Create the trust role
-	err = Role.Create(ctx, a)
+	// Create or converge the trust role
+	_, _, err = a.ensureRole(ctx)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (a *AWS) Delete(ctx context.Context) error {
 		return err
 	}
 
-	err = Role.Delete(ctx, a)
+	err = a.deleteRole(ctx)
 	if err != nil {
 		return err
 	}
