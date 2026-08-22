@@ -81,8 +81,6 @@ func (s SubjectTokenSupplier) SubjectToken(ctx context.Context, opts externalacc
 // Google credentials and refreshes them automatically. Pass it to any Google
 // client library with option.WithTokenSource.
 func TokenSource(ctx context.Context, client oidcx.Client, cfg Config) (oauth2.TokenSource, error) {
-	fmt.Println(cfg.Audience())
-
 	conf := externalaccount.Config{
 		Audience:             cfg.Audience(),
 		SubjectTokenType:     "urn:ietf:params:oauth:token-type:jwt",
