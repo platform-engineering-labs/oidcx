@@ -42,7 +42,7 @@ func New(logger *slog.Logger, credProvider aws.CredentialsProvider, region, acco
 	}
 
 	if *result.Account != accountId {
-		return nil, fmt.Errorf("account id does not match the account authenticated to with the provided credentials, expected %s, got %s", accountId, result.Account)
+		return nil, fmt.Errorf("account id does not match the account authenticated to with the provided credentials, expected %s, got %s", accountId, *result.Account)
 	}
 
 	return &AWS{logger, iam.NewFromConfig(cfg), *result.Account, tenantId, installationId}, nil
