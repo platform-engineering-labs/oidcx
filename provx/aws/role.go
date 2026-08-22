@@ -39,7 +39,7 @@ func (role) Create(ctx context.Context, awsProv *AWS) error {
 			{
 				Effect: "Allow",
 				Principal: FederatedPrincipal{
-					Federated: ConnectProvider.Arn(awsProv),
+					Federated: awsProv.providerArn(),
 				},
 				Action: "sts:AssumeRoleWithWebIdentity",
 				Condition: map[string]interface{}{

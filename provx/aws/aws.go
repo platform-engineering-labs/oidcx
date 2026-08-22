@@ -75,8 +75,8 @@ func newWithClients(ctx context.Context, stsc stsAPI, iamc iamAPI, accountID, su
 }
 
 func (a *AWS) Create(ctx context.Context) error {
-	// Create connect provider
-	err := ConnectProvider.Create(ctx, a)
+	// Create or validate the connect provider
+	_, err := a.ensureProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (a *AWS) Delete(ctx context.Context) error {
 		return err
 	}
 
-	err = ConnectProvider.Delete(ctx, a)
+	err = a.deleteProvider(ctx)
 	if err != nil {
 		return err
 	}
