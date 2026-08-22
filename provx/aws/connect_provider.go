@@ -4,58 +4,89 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
-	"github.com/platform-engineering-labs/oox/provx"
 )
 
-var ConnectProvider = connectProvider{}
+// ProviderOutcome reports what ensureProvider did.
+type ProviderOutcome string
 
-type connectProvider struct{}
+const (
+	ProviderCreated ProviderOutcome = "created"
+	ProviderExisted ProviderOutcome = "existed"
+)
 
-func (connectProvider) Arn(accountId string) string {
-	return fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s", accountId, provx.Endpoint)
+const stsAudience = "sts.amazonaws.com"
+
+func (a *AWS) providerArn() string {
+	return "arn:aws:iam::" + a.accountID + ":oidc-provider/" + a.issuer.Host()
 }
 
-func (connectProvider) Create(ctx context.Context, awsProv *AWS) error {
-	_, err := awsProv.client.CreateOpenIDConnectProvider(ctx, &iam.CreateOpenIDConnectProviderInput{
-		Url: aws.String(fmt.Sprintf("https://%s", provx.Endpoint)),
+// ensureProvider creates the OIDC provider for the pinned issuer, or
+// validates an existing one: its URL must match the pinned issuer
+// (anything else is a conflict, not ours to converge) and the STS
+// audience is added to its client id list when missing.
+func (a *AWS) ensureProvider(ctx context.Context) (ProviderOutcome, error) {
+	_, err := a.iam.CreateOpenIDConnectProvider(ctx, &iam.CreateOpenIDConnectProviderInput{
+		Url: aws.String(a.issuer.URL()),
 		ClientIDList: []string{
-			"sts.amazonaws.com",
+			stsAudience,
 		},
 	})
-	if err != nil {
-		var alreadyExistsErr *types.EntityAlreadyExistsException
-		if errors.As(err, &alreadyExistsErr) {
-			awsProv.Info("exists: oidc connect provider")
-			return nil
-		}
-
-		return fmt.Errorf("create openId connect provider failed: %v", err)
+	if err == nil {
+		a.logger.Info("created: oidc connect provider")
+		return ProviderCreated, nil
 	}
 
-	awsProv.Info("created: oidc connect provider")
+	var alreadyExistsErr *types.EntityAlreadyExistsException
+	if !errors.As(err, &alreadyExistsErr) {
+		return "", fmt.Errorf("create openId connect provider failed: %w", err)
+	}
 
-	return nil
+	got, err := a.iam.GetOpenIDConnectProvider(ctx, &iam.GetOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(a.providerArn()),
+	})
+	if err != nil {
+		return "", &ProviderConflictError{Reason: "could not read the existing provider", Cause: err}
+	}
+
+	// IAM stores the provider Url scheme-less.
+	if aws.ToString(got.Url) != a.issuer.Host() {
+		return "", &ProviderConflictError{Reason: "provider URL differs from the pinned issuer"}
+	}
+
+	if !slices.Contains(got.ClientIDList, stsAudience) {
+		_, err := a.iam.AddClientIDToOpenIDConnectProvider(ctx, &iam.AddClientIDToOpenIDConnectProviderInput{
+			OpenIDConnectProviderArn: aws.String(a.providerArn()),
+			ClientID:                 aws.String(stsAudience),
+		})
+		if err != nil {
+			return "", &ProviderConflictError{Reason: "could not add the STS audience to the existing provider", Cause: err}
+		}
+		a.logger.Info("converged: oidc connect provider audience")
+	}
+
+	a.logger.Info("exists: oidc connect provider")
+	return ProviderExisted, nil
 }
 
-func (connectProvider) Delete(ctx context.Context, awsProv *AWS) error {
-	_, err := awsProv.client.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
-		OpenIDConnectProviderArn: aws.String(ConnectProvider.Arn(awsProv.accountId)),
+func (a *AWS) deleteProvider(ctx context.Context) error {
+	_, err := a.iam.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(a.providerArn()),
 	})
 	if err != nil {
 		var noSuchEntityErr *types.NoSuchEntityException
 		if errors.As(err, &noSuchEntityErr) {
-			awsProv.Info("already deleted: oidc connect provider")
+			a.logger.Info("already deleted: oidc connect provider")
 			return nil
-		} else {
-			return err
 		}
+		return err
 	}
 
-	awsProv.Info("deleted: oidc connect provider")
+	a.logger.Info("deleted: oidc connect provider")
 
 	return nil
 }
